@@ -13,7 +13,7 @@ from torch.nn.functional import normalize
 
 from sys_dyn.nlsys_utils import test_quad_2d_track
 from sys_dyn.problem_setups import quad_2d_sys_1d_inp_res
-from ds_utils import GP_DS
+from ds_utils.utils import GP_DS
 from .utils import Traj_DS, Mapping_DS
 from adaptive_mapper.utils import gen_dl_from_samples_n_env
 

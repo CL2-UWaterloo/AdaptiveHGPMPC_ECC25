@@ -8,6 +8,7 @@ from common.box_constraint_utils import box_constraint
 from common.plotting_utils import generate_fine_grid, AxisAdjuster, save_fig
 from ds_utils.utils import GP_DS
 from common.data_save_utils import save_to_data_dir
+from consts import FIG_SAVE_BOOL
 
 
 def setup_terminal_costs(A, B, Q, R):
@@ -415,7 +416,8 @@ def plot_CL_opt_soln(waypoints_to_track, data_dict_cl, ret_mu_x_cl, state_plot_i
     data_dict = {"ref_traj": waypoints_to_track, "cl_traj": np.hstack([x_cl_traj_to_plot.reshape(1, -1), z_cl_traj_to_plot.reshape(1, -1)]), "box_env_inst": box_env_inst}
     save_to_data_dir(data_dict, file_name=fig_name)
     # save_to_data_dir(fig, file_name=fig_name)
-    save_fig(axes=axes, fig_name=fig_name, tick_sizes=15, tick_skip=1, k_range=None)
+    if FIG_SAVE_BOOL:
+        save_fig(axes=axes, fig_name=fig_name, tick_sizes=15, tick_skip=1, k_range=None)
 
     # save_fig(axes=axes, fig_name="cl_traj_mapping_"+str(itn_num), tick_sizes=16)
 

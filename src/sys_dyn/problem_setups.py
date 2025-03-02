@@ -1,9 +1,10 @@
 import numpy as np
 
-from ds_utils import box_constraint, test_1d_op_1d_inp_poly
+from common.box_constraint_utils import box_constraint
+from ds_utils.utils import test_1d_op_1d_inp_poly
 from .nlsys_utils import quad_2D_dyn, planar_nl_sys, planar_lti_sys, kin_st_model
 from incremental_controller_impls.smpc_base import planar_region_gen_and_viz
-from adaptive_mapper.utils import Box_Environment
+from common.box_constraint_utils import Box_Environment
 from incremental_controller_impls.utils import test_box_env_3_box_3_surf
 
 
@@ -67,7 +68,7 @@ class ProblemSetup:
 def quad_2d_sys_1d_inp_res(velocity_limit_override=0.3, region_viz=False, box_env_inst: Box_Environment=None,
                            sampling_time=20 * 10e-3, ret_inst=False):
     if box_env_inst is None:
-        box_env_inst = test_box_env_3_box_3_surf(viz=True)
+        box_env_inst = test_box_env_3_box_3_surf(viz=False)
     # State, input, residual dimensions. LQR Cost matrices, state and input constraint sets
     x_threshold = box_env_inst.x_max
     z_threshold = box_env_inst.y_max
@@ -145,7 +146,7 @@ def quad_2d_sys_1d_inp_res(velocity_limit_override=0.3, region_viz=False, box_en
 
 def planar_lti_1d_inp_res(u_max=5, region_viz=False, box_env_inst: Box_Environment=None, sampling_time=20 * 10e-3, ret_inst=False):
     if box_env_inst is None:
-        box_env_inst = test_box_env_3_box_3_surf(viz=True)
+        box_env_inst = test_box_env_3_box_3_surf(viz=False)
 
     # State, input, residual dimensions. LQR Cost matrices, state and input constraint sets
     x1_threshold = box_env_inst.x_max

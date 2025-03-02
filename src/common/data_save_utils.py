@@ -3,7 +3,7 @@ import os
 import consts
 
 
-def save_acc_n_loss(data, base_path="C:\\Users\\l8souza\\PycharmProjects\\GPMPC_HM\\src\\data_dir\\",
+def save_acc_n_loss(data, base_path=consts.data_dir,
                     file_name="acc_n_loss_save", extension='.pkl'):
     if os.path.exists(base_path+file_name+extension):
         skip_read = False
@@ -20,7 +20,7 @@ def save_acc_n_loss(data, base_path="C:\\Users\\l8souza\\PycharmProjects\\GPMPC_
         pkl.dump(base_data, f)
 
 
-def read_acc_n_loss(base_path="C:\\Users\\l8souza\\PycharmProjects\\GPMPC_HM\\src\\data_dir\\",
+def read_acc_n_loss(base_path=consts.data_dir,
                     file_name="acc_n_loss_save", extension='.pkl', print_data=True):
     with open(base_path+file_name+extension, 'rb') as f:
         data = pkl.load(f)
@@ -63,7 +63,7 @@ def save_to_data_dir(data, file_name):
     os.chdir(cwd)
 
 
-def save_data(data, base_path="C:\\Users\\l8souza\\PycharmProjects\\GPMPC_HM\\src\\data_dir\\",
+def save_data(data, base_path=consts.data_dir,
               file_name="gpmpc_d_runs", extension='.pkl', update_data=False):
     file_exists = False
     if os.path.exists(base_path+file_name+extension):
@@ -75,12 +75,16 @@ def save_data(data, base_path="C:\\Users\\l8souza\\PycharmProjects\\GPMPC_HM\\sr
                 old_data = pkl.load(f)
     with open(base_path+file_name+extension, 'wb') as f:
         if update_data and file_exists:
-            if len(old_data) > len(data):
-                data = old_data + data
+            if type(old_data) is list:
+                if len(old_data) > len(data):
+                    data = old_data + data
+            elif type(old_data) is dict:
+                old_data.update(data)
+                data = old_data
         pkl.dump(data, f)
 
 
-def read_data(base_path="C:\\Users\\l8souza\\PycharmProjects\\GPMPC_HM\\src\\data_dir\\",
+def read_data(base_path=consts.data_dir,
               file_name="gpmpc_d_runs", extension='.pkl'):
     # assert os.path.exists(base_path+file_name+extension), "File to read desired trajectory to track does not exist"
     try:
@@ -93,7 +97,7 @@ def read_data(base_path="C:\\Users\\l8souza\\PycharmProjects\\GPMPC_HM\\src\\dat
     return data
 
 
-def update_data(new_data, base_path="C:\\Users\\l8souza\\PycharmProjects\\GPMPC_HM\\src\\data_dir\\",
+def update_data(new_data, base_path=consts.data_dir,
                 file_name="gpmpc_d_runs", extension='.pkl'):
     assert os.path.exists(base_path+file_name+extension), "File to read desired trajectory to track does not exist"
     with open(base_path+file_name+extension, 'wb') as f:

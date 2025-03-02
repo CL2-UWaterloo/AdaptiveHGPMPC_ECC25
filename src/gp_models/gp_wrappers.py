@@ -5,9 +5,11 @@ import matplotlib.pyplot as plt
 import torch
 
 from .utils import train_test, piecewise_train_test, Piecewise_GPR_Callback, MultidimGPR_Callback, GPR_Callback, gp_viz_plotter
-from ds_utils import GP_DS
+from ds_utils.utils import GP_DS
 from common.plotting_utils import plot_uncertainty_bounds_1d
-from adaptive_mapper.utils import Box_Environment
+from common.box_constraint_utils import Box_Environment
+from common.data_save_utils import save_data
+from consts import data_dir, FIG_SAVE_BOOL
 
 
 def construct_pw_gpr_cb_from_models(models, likelihoods, input_dims, output_dims, num_regions):
@@ -37,12 +39,12 @@ def gen_wrapped_pw_gp(ds_ndim_test, return_error_attrs, num_regions, num_iter=40
         likelihoods, models = likelihoods_piecewise_nd, piecewise_models_nd
         if save_to_file:
             print("SAVING GP MODELS AND LIKELIHOODS TO FILE: %s" % (file_save_name+".pkl"))
-            with open(os.getcwd()+"\\"+file_save_name+".pkl", "wb") as pklfile:
-                data_dict = {"ds_inst": ds_ndim_test, "likelihoods_pw": likelihoods, "models_pw": models}
-                pkl.dump(data_dict, pklfile)
+            data_dict = {"ds_inst": ds_ndim_test, "likelihoods_pw": likelihoods, "models_pw": models}
+            save_data(data_dict, base_path=data_dir,
+                      file_name=file_save_name, extension='.pkl', update_data=True)
     else:
         print("LOADING GP MODELS AND LIKELIHOODS FROM FILE: %s" % file_load_name+".pkl")
-        with open(os.getcwd()+"\\"+file_load_name+".pkl", "rb") as pklfile:
+        with open(data_dir+file_load_name+".pkl", "rb") as pklfile:
             data_dict = pkl.load(pklfile)
             ds_ndim_test, likelihoods, models = data_dict["ds_inst"], data_dict["likelihoods_pw"], data_dict["models_pw"]
 
@@ -122,11 +124,9 @@ def construct_gp_wrapped_global(ds_inst_in, viz=True, ax=None, fineness_param=(2
         likelihoods, models = likelihoods_2d, models_2d
 
         if save_to_file:
-            with open(os.getcwd()+"\\"+file_save_name+".pkl", "rb") as pklfile:
-                data_dict = pkl.load(pklfile)
-            with open(os.getcwd()+"\\"+file_save_name+".pkl", "wb") as pklfile:
-                data_dict.update({"ds_inst": ds_ndim_test, "likelihoods_glob": likelihoods, "models_glob": models})
-                pkl.dump(data_dict, pklfile)
+            data_dict = {"ds_inst": ds_ndim_test, "likelihoods_glob": likelihoods, "models_glob": models}
+            save_data(data_dict, base_path=data_dir,
+                      file_name=file_save_name, extension='.pkl', update_data=True)
     else:
         with open(os.getcwd()+"\\"+file_load_name+".pkl", "rb") as pklfile:
             data_dict = pkl.load(pklfile)
@@ -230,7 +230,8 @@ def train_global_n_pw(ds_inst_in, box_env_inst, viz=True, verbose=True, return_e
         ax.yaxis.set_tick_params(labelsize=20)
         ax.set_xlim([-1, 1])
 
-    plt.savefig('gp_inp_overlap_base.svg', format='svg', dpi=300)
+    if FIG_SAVE_BOOL:
+        plt.savefig('gp_inp_overlap_base.svg', format='svg', dpi=300)
     plt.show()
 
     if return_error_attrs:

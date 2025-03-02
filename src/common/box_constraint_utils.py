@@ -1,7 +1,12 @@
+from matplotlib.colors import ListedColormap
+import copy
 import matplotlib.pyplot as plt
 import numpy as np
 import polytope as pc
 import torch
+
+from common.plotting_utils import save_fig, AxisAdjuster 
+from consts import FIG_SAVE_BOOL
 
 
 class box_constraint:
@@ -256,3 +261,160 @@ def combine_box(box1, box2, verbose=False):
     if verbose:
         print(new_constraint)
     return new_constraint
+
+
+class Box_Environment:
+    def __init__(self, num_boxes, num_surf, lb_arr, ub_arr, box2surfid, x_min=0, x_max=4, y_min=0, y_max=4, **kwargs):
+        self.num_boxes = num_boxes
+        self.num_surf = num_surf
+        self.lb_arr = lb_arr
+        self.ub_arr = ub_arr
+        self.box2surfid = box2surfid
+        self.surf2boxid = {}
+        self.x_min, self.x_max, self.y_min, self.y_max = x_min, x_max, y_min, y_max
+        self.invert_box2surf()
+
+        boxes = kwargs.get('boxes', None)
+        self.boxes = boxes
+        if boxes is None:
+            self.boxes = [box_constraint(lb=lb_arr[i], ub=ub_arr[i]) for i in range(self.num_boxes)]
+
+    def invert_box2surf(self):
+        for k, v in self.box2surfid.items():
+            self.surf2boxid[v] = self.surf2boxid.get(v, []) + [k]
+
+    def assign_samples2surf(self, samples, skip_overlap_check=False):
+        box2satisfied_dict = {}
+        surf2satisfied_dict = {}
+        num_samples = samples.shape[1]
+        for box_idx, box in enumerate(self.boxes):
+            samples_satisfied = box.check_satisfaction_arr(samples)
+            box2satisfied_dict[box_idx] = samples_satisfied
+
+        for box_idx in range(len(self.boxes)):
+            surf_idx = self.box2surfid[box_idx]
+            samples_satisfied = box2satisfied_dict[box_idx]
+            if surf2satisfied_dict.get(surf_idx, None) is None:
+                surf2satisfied_dict[surf_idx] = samples_satisfied
+            else:
+                surf2satisfied_dict[surf_idx] = surf2satisfied_dict[surf_idx] | samples_satisfied
+        for surf_idx in range(self.num_surf):
+            if surf2satisfied_dict.get(surf_idx, None) is None:
+                surf2satisfied_dict[surf_idx] = np.array([False, ]*num_samples)
+
+        # Necessary to prevent a single sample being assigned multiple surfaces when present in an intersection region of
+        # 2 boxes with conflicting surface ids.
+        if not skip_overlap_check:
+            for hp_surf_idx in range(self.num_surf-1, -1, -1):
+                for lp_surf_idx in range(hp_surf_idx-1, -1, -1):
+                    try:
+                        surf2satisfied_dict[lp_surf_idx][np.where(surf2satisfied_dict[hp_surf_idx] == True)[0]] = False
+                    except KeyError:
+                        continue
+        return surf2satisfied_dict
+
+    def gen_test_samples(self, fine_ctrl=100):
+        x_range = np.linspace(self.x_min, self.x_max, fine_ctrl)
+        y_range = np.linspace(self.y_min, self.y_max, fine_ctrl)
+        # Create a grid of x[1] and x[2] values
+        meshes = np.meshgrid(*[x_range, y_range], indexing='xy')
+
+        # Flatten the meshgrid and stack the coordinates to create an array of size (K, n-dimensions)
+        samples = np.vstack([m.flatten() for m in meshes])
+        return samples
+
+    def visualize_env(self, fine_ctrl=100, ax=None, alpha=1, fig_save_name='test',
+                      colours=('r', 'g', 'b', 'cyan', 'black')):
+        samples = self.gen_test_samples(fine_ctrl)
+        _, ax = self.viz_samples(samples, ax=ax, alpha=alpha, fig_save_name=fig_save_name, colours=colours, ret_ax=True)
+        return ax
+
+    def assign_samples2surfidx(self, samples, skip_overlap_check=False):
+        surf2satisfied_dict = self.assign_samples2surf(samples, skip_overlap_check=skip_overlap_check)
+        size = samples.shape[1]
+
+        sample_labels = np.ones(size)*-1
+        for surf_idx in range(self.num_surf):
+            try:
+                sample_labels[np.where(surf2satisfied_dict[surf_idx])[0]] = surf_idx
+            except KeyError:
+                continue
+        return surf2satisfied_dict, sample_labels
+
+    def viz_samples(self, samples, ax=None, scale_for_imshow=False, fine_ctrl=100, alpha=1, fig_save_name='test',
+                    colours=('r', 'g', 'b', 'cyan', 'black'), ret_ax=False, title=''):
+        surf2satisfied_dict, sample_labels = self.assign_samples2surfidx(samples)
+        # if alpha==1:
+        #     print(surf2satisfied_dict)
+        #     print(samples[0])
+        #     print(samples[1])
+
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(7, 6))
+            ax.set_xlim(self.x_min, self.x_max)
+        if scale_for_imshow:
+            samples = self.scale_samples(samples, fine_ctrl)
+        sc = ax.scatter(samples[0], samples[1],
+                        c=sample_labels, cmap=ListedColormap(['r', 'g', 'b']), vmin=0, vmax=self.num_surf-1, alpha=alpha)
+        AxisAdjuster(labelsize=25).adjust_ax_object(ax=ax,
+                                                    title_text="Environment mode distribution" if not title else title,
+                                                    xlabel_text='x-coord (m)',
+                                                    ylabel_text='y-coord (m)', set_equal=False, skip_legend=True, legend_loc="lower right")
+        if FIG_SAVE_BOOL:
+            save_fig(axes=[ax], fig_name=fig_save_name, tick_sizes=20, tick_skip=1, k_range=None)
+        # plt.show()
+        if ret_ax:
+            return sample_labels, ax
+        else:
+            return sample_labels
+
+    def scale_samples(self, samples, fine_ctrl):
+        samples_cpy = copy.deepcopy(samples)
+        samples_cpy[0, :] = samples_cpy[0, :] / (self.x_max - self.x_min)
+        samples_cpy[1, :] = samples_cpy[1, :] / (self.y_max - self.y_min)
+        samples_cpy = samples_cpy*fine_ctrl
+        return samples_cpy
+
+    def gen_ds_samples(self, box2numsamples_dict, viz=True, fig_save_name='test'):
+        samples = np.zeros((2, 0))
+        surf_id = np.zeros(0)
+        for box_id in box2numsamples_dict.keys():
+            num_samples = box2numsamples_dict[box_id]
+            redundant_sample_mult_factor = 25
+            temp_samples = self.boxes[box_id].get_random_vectors(num_samples=num_samples*redundant_sample_mult_factor)
+            """
+            NOTE: With the way code is set up, boxes are allowed to overlap. However, at the intersection of two boxes,
+            the box which has the higher surface index gets priority. This code block just checks if the samples generated
+            for a particular box will actually be assigned a different surface value than self.box2surfid[box_id] and if it does,
+            they get pruned. This is also the reason for the redundant sample mult factor param above. Redundant samples 
+            above the user-specified limit will be pruned by random choice.
+            """
+            base_ids = np.ones(num_samples*redundant_sample_mult_factor)*self.box2surfid[box_id]
+            _, temp_sample_labels = self.assign_samples2surfidx(temp_samples)
+            temp_samples = temp_samples[:, np.where(temp_sample_labels == base_ids)[0]]
+            # Pruning any remaining redundant samples to adhere to the user-specified sample limits.
+            # print(box_id)
+            # print(temp_samples.shape)
+            temp_samples = temp_samples[:, np.random.choice(a=np.arange(temp_samples.shape[-1]),
+                                                            size=num_samples,
+                                                            replace=False)]
+            samples = np.hstack([samples, temp_samples])
+            surf_id = np.hstack([surf_id, np.ones(temp_samples.shape[1])*box_id])
+        if viz:
+            self.viz_samples(samples, fig_save_name=fig_save_name)
+        return samples
+
+    def get_mode_at_points(self, samples, enforce_satisfaction=False, skip_overlap_check=False):
+        surf2satisfied_dict, sample_labels = self.assign_samples2surfidx(samples, skip_overlap_check=skip_overlap_check)
+        mode_deltas = np.zeros((self.num_surf, sample_labels.shape[0]))
+        for i in range(self.num_surf):
+            if surf2satisfied_dict.get(i, None) is None:
+                continue
+            mode_deltas[i, :] = surf2satisfied_dict[i]
+        if enforce_satisfaction:
+            valid_idxs = np.where(np.sum(mode_deltas, axis=0) == 1)[0]
+            mode_deltas = mode_deltas[:, valid_idxs]
+            sample_labels = sample_labels[valid_idxs]
+            return mode_deltas, sample_labels, samples[:, valid_idxs]
+        else:
+            return mode_deltas, sample_labels

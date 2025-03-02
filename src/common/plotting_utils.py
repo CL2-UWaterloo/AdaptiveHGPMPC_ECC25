@@ -7,8 +7,6 @@ from matplotlib.collections import PathCollection
 from matplotlib.image import AxesImage
 from matplotlib.transforms import Bbox
 
-from .box_constraint_utils import box_constraint_direct
-
 
 def plot_uncertainty_bounds_1d(observed_pred, region_x, ax, colours, idx, custom_text=None):
     lower, upper = observed_pred.confidence_region()
@@ -17,6 +15,7 @@ def plot_uncertainty_bounds_1d(observed_pred, region_x, ax, colours, idx, custom
 
 
 def plot_constraint_sets(plot_idxs, inp_type="shrunk_vec", alpha=0.8, colour='r', ax=None, **kwargs):
+    from .box_constraint_utils import box_constraint_direct
     if inp_type == "shrunk_vec":
         reqd_keys = ["shrunk_vec"]
         assert all([key in kwargs for key in reqd_keys]), "Missing required keys for plotting shrunk vec representation"

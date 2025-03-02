@@ -223,7 +223,7 @@ class SirenPredictor:
         OKDE_to_alpha_map = lambda x: interpolate(x, okde_min_cutoff, okde_max_cutoff, alpha_min, alpha_max)
         return okde_inst, OKDE_to_alpha_map
 
-    def compute_posteriors(self, new_samples, old_samples, likelihoods_new, kde_bw=0.2, min_cutoff_sigma=1, max_cutoff_sigma=1, max_cutoff_num=2, alpha_min=0.1, alpha_max=0.4):
+    def compute_posteriors(self, new_samples, old_samples, likelihoods_new, kde_bw=0.2, min_cutoff_sigma=1, max_cutoff_sigma=1, max_cutoff_num=2, alpha_min=0.1, alpha_max=0.4, ret_alpha_map_vals=False):
         okde_inst, alpha_map_fn = self.compute_okde_to_alpha_map(old_samples, kde_bw=kde_bw, min_cutoff_sigma=min_cutoff_sigma, max_cutoff_sigma=max_cutoff_sigma,
                                                                  max_cutoff_num=max_cutoff_num, alpha_min=alpha_min, alpha_max=alpha_max)
         alpha_map_vals = alpha_map_fn(okde_inst.estimate_density(new_samples.T)).T
@@ -231,7 +231,21 @@ class SirenPredictor:
         unnormd_posteriors_new = (likelihoods_new ** alpha_map_vals) * softmaxd_op.detach().numpy()
         samplewise_norm_const = np.linalg.norm(unnormd_posteriors_new, ord=1, axis=0).reshape(1, -1)
         labels_new = unnormd_posteriors_new / samplewise_norm_const
-        return labels_new
+        if not ret_alpha_map_vals:
+            return labels_new
+        else:
+            x_min, x_max = 0, 4
+            y_min, y_max = 0, 4
+
+            # Create meshgrid for visualization
+            x_range = np.linspace(x_min, x_max, 50)
+            y_range = np.linspace(y_min, y_max, 50)
+            meshes = np.meshgrid(*[x_range, y_range], indexing='xy')
+
+            test_points = np.vstack([m.flatten() for m in meshes])
+            test_alpha_map_vals = alpha_map_fn(okde_inst.estimate_density(test_points.T)).T.reshape(50, 50)
+            
+            return labels_new, test_alpha_map_vals
 
     def get_pred_mse(self, true_labels, soft_pred_labels):
         mse_loss = np.mean((soft_pred_labels - true_labels) ** 2, axis=0)
@@ -239,38 +253,70 @@ class SirenPredictor:
         return total_mse_loss
 
     def test_model_preds_img(self, test_X, test_y, test_ds_fine_ctrl, viz_samples_on_test_pred=True, fig_save_name=None, samples_to_viz=None,
-                             acc_save_file_name='test'):
+                             acc_save_file_name='test', axes=None, titles=None):
         self.siren_inst.eval()  # Set the model to evaluation mode
         test_outputs, softmaxd_op, hard_test_ops, categorical_arr = self.gen_pred_outputs(test_X=test_X)
         self.siren_inst.train()
         acc = self.get_pred_acc(test_y, hard_test_ops.numpy())
         mse = self.get_pred_mse(test_y, softmaxd_op.numpy())
-        acc_prior = read_data(file_name=acc_save_file_name)
-        acc_prior.append(acc)
-        update_data(new_data=acc_prior, file_name=acc_save_file_name)
-        mse_pred_prior = read_data(file_name=acc_save_file_name+"_mse")
-        mse_pred_prior.append(mse)
-        update_data(new_data=mse_pred_prior, file_name=acc_save_file_name+"_mse")
+        try:
+            acc_prior = read_data(file_name=acc_save_file_name)
+            acc_prior.append(acc)
+            update_data(new_data=acc_prior, file_name=acc_save_file_name)
+            mse_pred_prior = read_data(file_name=acc_save_file_name+"_mse")
+            mse_pred_prior.append(mse)
+            update_data(new_data=mse_pred_prior, file_name=acc_save_file_name+"_mse")
+        except FileNotFoundError:
+            pass
         print("PRED ACC %s; PRED MSE %s" % (acc, mse))
         fine_ctrl = test_ds_fine_ctrl
 
-        arrs_to_viz = [softmaxd_op, hard_test_ops]
-        for i in range(2):
-            fig, ax = viz_quad_map_img(arr_to_viz=arrs_to_viz[i].T, fine_ctrl=fine_ctrl, samples_to_plot=None if not viz_samples_on_test_pred else samples_to_viz)
-            AxisAdjuster(labelsize=25).adjust_ax_object(ax=ax,
-                                                        title_text="%s label visualization across the workspace (Acc: %s)" % ("Soft" if i == 0 else "Hard", acc),
-                                                        xlabel_text='x-coord (m)',
-                                                        ylabel_text='z-coord (m)', set_equal=False, skip_legend=True)
-            if FIG_SAVE_BOOL and fig_save_name is not None:
-                save_name = fig_save_name+"%s"%("_soft" if i==0 else "_hard")
-                save_to_data_dir(fig, file_name=save_name)
-                plt.savefig(save_name+'.svg', format='svg', dpi=300, bbox_inches='tight')
+        # arrs_to_viz = [softmaxd_op, hard_test_ops]
+        # for i in range(2):
+        if titles is not None:
+            titles[1] = titles[1] + f" (Acc: {acc:.2f})"
+        fig, ax = viz_quad_map_img(arr_to_viz=softmaxd_op.T, fine_ctrl=fine_ctrl, samples_to_plot=None if not viz_samples_on_test_pred else samples_to_viz, axes=axes,
+                                   titles=titles)
+            # AxisAdjuster(labelsize=25).adjust_ax_object(ax=ax,
+            #                                             title_text="%s label visualization across the workspace (Acc: %s)" % ("Soft" if i == 0 else "Hard", acc),
+            #                                             xlabel_text='x-coord (m)',
+            #                                             ylabel_text='z-coord (m)', set_equal=False, skip_legend=True)
+        if FIG_SAVE_BOOL and fig_save_name is not None:
+            save_name = fig_save_name
+            save_to_data_dir(fig, file_name=save_name)
+            plt.savefig(save_name+'.svg', format='svg', dpi=300, bbox_inches='tight')
 
 
-def viz_quad_map_img(arr_to_viz, fine_ctrl, samples_to_plot=None):
-    fig, ax = plt.subplots(1, 1, figsize=(12, 7))
-    im2viz = arr_to_viz.view(fine_ctrl, fine_ctrl, 3).numpy()
-    ax.imshow(im2viz, origin="lower", extent=[0, 4, 0, 4])
+def viz_quad_map_img(arr_to_viz, fine_ctrl, samples_to_plot=None, axes=None, titles=None):
+    # fig, ax = plt.subplots(1, 1, figsize=(12, 7))
+    # im2viz = arr_to_viz.view(fine_ctrl, fine_ctrl, 3).numpy()
+    # ax.imshow(im2viz, origin="lower", extent=[0, 4, 0, 4])
+    # if samples_to_plot is not None:
+    #     ax.scatter(samples_to_plot[0, :], samples_to_plot[1, :], color="orange", s=60)
+    # return fig, ax
+
+    if axes is not None:
+        fig = None
+        assert len(axes) == 2
+    else:
+        fig, axes = plt.subplots(2, 1, figsize=(26, 15))
+    im2viz = arr_to_viz.view(fine_ctrl, fine_ctrl, 3).numpy()    
+    axes[0].imshow(im2viz, origin="lower", extent=[0, 4, 0, 4])
+    argmax_indices = np.argmax(im2viz, axis=-1)
+    hard_im2viz = np.zeros_like(im2viz)
+    row_indices, col_indices = np.indices((fine_ctrl, fine_ctrl))
+    hard_im2viz[row_indices, col_indices, argmax_indices] = 1
+    axes[1].imshow(hard_im2viz, origin="lower", extent=[0, 4, 0, 4])
     if samples_to_plot is not None:
-        ax.scatter(samples_to_plot[0, :], samples_to_plot[1, :], color="orange", s=60)
-    return fig, ax
+        axes[0].scatter(samples_to_plot[0, :], samples_to_plot[1, :], color="orange", s=60)
+        axes[1].scatter(samples_to_plot[0, :], samples_to_plot[1, :], color="orange", s=60)
+    if titles is None:
+        titles = ["Soft posterior values", "Hard (argmax'd) posterior values"]
+    for ax_idx, ax in enumerate(axes):
+        AxisAdjuster(labelsize=25).adjust_ax_object(ax=ax,
+                                                    title_text=titles[ax_idx],
+                                                    xlabel_text='x-coord (m)',
+                                                    ylabel_text='y-coord (m)', set_equal=False, skip_legend=True, legend_loc="lower right")
+    
+    return fig, axes
+

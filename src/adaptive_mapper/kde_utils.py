@@ -51,19 +51,22 @@ def update_and_estimate_density(OKDE_inst, test_points, test_fine_ctrl, data, vi
     return density_estimate
 
 
-def viz_OKDE(density_estimate, x_min, x_max, y_min, y_max, data=None, log_norm=False, title='', fig_save_file='test', include_colourbar=True):
+def viz_OKDE(density_estimate, x_min, x_max, y_min, y_max, data=None, log_norm=False, title='', fig_save_file='test', include_colourbar=True, ax=None):
     # Plot heatmap
-    fig, ax = plt.subplots(1, 1, figsize=(8, 5))
-    heatmap = plt.imshow(density_estimate, origin='lower', cmap='hot', extent=(x_min, x_max, y_min, y_max),
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+    heatmap = ax.imshow(density_estimate, origin='lower', cmap='hot', extent=(x_min, x_max, y_min, y_max),
                          norm=(None if log_norm is False else LogNorm()))
     if include_colourbar:
-        cbar = plt.colorbar(heatmap, label='Density')
+        # cbar = plt.colorbar(heatmap, label='Density')
+        # Add a colorbar to the axis
+        cbar = ax.figure.colorbar(heatmap, ax=ax)
         cbar.set_label(label='KDE magnitude', size=25)
         cbar.ax.tick_params(labelsize=25)
     if data is not None:
-        plt.scatter(data[:, 0], data[:, 1], c='cyan', s=40, label='Data')
-    plt.xlim(x_min, x_max)
-    plt.ylim(y_min, y_max)
+        ax.scatter(data[:, 0], data[:, 1], c='cyan', s=40, label='Data')
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
     AxisAdjuster(labelsize=25).adjust_ax_object(ax=ax,
                                                 title_text="Estimated Density Heatmap" if not title else title,
                                                 xlabel_text='x-coord (m)',
@@ -73,7 +76,7 @@ def viz_OKDE(density_estimate, x_min, x_max, y_min, y_max, data=None, log_norm=F
     return ax
 
 
-def viz_vanilla_OKDE(data=None, kernel_type='gaussian', bandwidth=0.5, log_norm_viz=False, test_fine_ctrl=100, fig_save_file='test'):
+def viz_vanilla_OKDE(data=None, kernel_type='gaussian', bandwidth=0.5, log_norm_viz=False, test_fine_ctrl=100, fig_save_file='test', viz=True):
     x_min, x_max = 0, 4
     y_min, y_max = 0, 4
 
@@ -91,7 +94,7 @@ def viz_vanilla_OKDE(data=None, kernel_type='gaussian', bandwidth=0.5, log_norm_
     okde_2d = OnlineKDE_Vanilla(bandwidth=bandwidth, kernel=kernel_type)
 
     # Streaming update
-    density_estimate = update_and_estimate_density(okde_2d, test_points, test_fine_ctrl, data.T, viz=True,
+    density_estimate = update_and_estimate_density(okde_2d, test_points, test_fine_ctrl, data.T, viz=viz,
                                                    x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max, log_norm_viz=log_norm_viz,
                                                    fig_save_file=fig_save_file)
 
@@ -100,10 +103,11 @@ def viz_vanilla_OKDE(data=None, kernel_type='gaussian', bandwidth=0.5, log_norm_
 
 def test_vanilla_OKDE(samples, bandwidth=0.2, min_cutoff_sigma=1, max_cutoff_sigma=1, max_cutoff_num=2,
                       ret_min_max_cutoffs=False, viz=True, KDE_fig_save_file='test', KDE_above_min_save_file='test', KDE_above_max_save_file='test'):
-    okde_inst, density_estimate = viz_vanilla_OKDE(data=samples, bandwidth=bandwidth, fig_save_file=KDE_fig_save_file)
+    okde_inst, density_estimate = viz_vanilla_OKDE(data=samples, bandwidth=bandwidth, fig_save_file=KDE_fig_save_file, viz=viz)
+
     peak_val = compute_kde_magnitudes(bw=bandwidth, N=samples.shape[1], sigma=0)
     min_sigma_val = compute_kde_magnitudes(bw=bandwidth, N=samples.shape[1], sigma=min_cutoff_sigma)
-    print("Peak %s, min_sigma_val %s, peak-sigma %s" % (peak_val, min_sigma_val, peak_val-min_sigma_val))
+    # print("Peak %s, min_sigma_val %s, peak-sigma %s" % (peak_val, min_sigma_val, peak_val-min_sigma_val))
     min_cutoff_val = min_sigma_val
     if viz:
         above_min_arr = np.ones_like(density_estimate.ravel())
@@ -113,7 +117,7 @@ def test_vanilla_OKDE(samples, bandwidth=0.2, min_cutoff_sigma=1, max_cutoff_sig
         viz_OKDE(above_min_arr, 0, 4, 0, 4, samples.T, log_norm=False, fig_save_file=KDE_above_min_save_file, include_colourbar=False)
 
     max_sigma_val = compute_kde_magnitudes(bw=bandwidth, N=samples.shape[1], sigma=max_cutoff_sigma)
-    print("Peak %s, max_sigma_val %s, peak + %s *sigma %s" % (peak_val, max_sigma_val, max_cutoff_num, peak_val+max_cutoff_num*max_sigma_val))
+    # print("Peak %s, max_sigma_val %s, peak + %s *sigma %s" % (peak_val, max_sigma_val, max_cutoff_num, peak_val+max_cutoff_num*max_sigma_val))
     max_cutoff_val = peak_val + (max_cutoff_num*max_sigma_val)
     if viz:
         above_max_arr = np.zeros_like(density_estimate.ravel())

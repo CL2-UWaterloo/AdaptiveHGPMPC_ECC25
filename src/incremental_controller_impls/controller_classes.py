@@ -5,13 +5,15 @@ import copy
 import functools
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-import torch
+import numpy as np
 import scipy
+from typing import List
 
+from common.box_constraint_utils import Box_Environment
 from sys_dyn.problem_setups import *
 from sys_dyn.nlsys_utils import SymbolicModel
 from .utils import linearize_for_terminal
-from smpc_base import delta_matrix_mult, get_inv_cdf, hybrid_res_covar, computeSigma_nofeedback, fwdsim_w_pw_res
+from .smpc_base import delta_matrix_mult, get_inv_cdf, hybrid_res_covar, computeSigma_nofeedback, fwdsim_w_pw_res
 from common.plotting_utils import plot_constraint_sets
 from adaptive_mapper.utils import Mapping_DS
 from gp_models.utils import GP_Model
@@ -1017,7 +1019,7 @@ class GPMPC_D(GPMPC_BnC):
         print("Shrinking by desired. MAKE SURE YOU HAVE PASSED IN THE MOST UP TO DATE X_DESIRED. This approach is to be used AFTER"
             " hlds have been generated since the hlds are used to forward")
         affine_transform_list, Sigma_d_list = self.shrunk_gen_commons(simulation_length=simulation_length)
-        print(len(Sigma_d_list))
+        # print(len(Sigma_d_list))
         self.shrunk_vecs_x = np.zeros((simulation_length,
                                        2*self.n_x, self.N + 1))  # First timestep no shrinking. Use self.X.b_np
         if not self.skip_feedback:
@@ -1636,7 +1638,7 @@ class GPMPC_MINLP(GPMPC_D):
         # computation and if they get garbage collected these refs will be invalid.
         res_compute_fns = []
         for r in range(self.num_regions):
-            models[r]: GP_Model
+            models: List[GP_Model]
             get_hyb_res_cov = cs.Function('compute_resmean_region_r', [gp_inp_OL],
                                           [models[r].cs_predict_cov(gp_inp_OL)],
                                           ['gp_inp_OL'], ['mu_d_hyb'])

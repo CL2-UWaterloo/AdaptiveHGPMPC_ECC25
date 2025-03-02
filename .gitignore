@@ -1,0 +1,45 @@
+# Byte-compiled files
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Distribution files
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# IDE-specific files
+.vscode/
+.idea/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+/wandb
+src/wandb
+
+# Cache
+*.cache
+
+src/temp.py
+*.mp4
+
+*.pth
+
+src/incremental_controller_impls/controller_classes_clean.py
+src/incremental_controller_impls/controller_classes_copy.py
+
+ipynb_tests/.ipynb_checkpoints
+ipynb_tests/ECC25_LTI_tests - Copy.ipynb
+ipynb_tests/ECC25_2DQuad_tests - Copy.ipynb
+ipynb_tests/ECC25_adapmap_results - Old.ipynb

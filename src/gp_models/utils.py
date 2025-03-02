@@ -9,7 +9,7 @@ import tqdm
 
 from common.kernel_utils import covSEard
 from common.plotting_utils import plot_uncertainty_bounds_1d
-from ds_utils import GP_DS
+from ds_utils.utils import GP_DS
 
 
 def samplewise_pred_loss(mvnorm_inst, test_y, loss_type='nlpd'):

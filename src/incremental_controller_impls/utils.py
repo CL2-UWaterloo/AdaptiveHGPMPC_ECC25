@@ -1,6 +1,6 @@
 import numpy as np
 from incremental_controller_impls.smpc_base import setup_terminal_costs
-from adaptive_mapper.utils import Box_Environment
+from common.box_constraint_utils import Box_Environment
 
 
 def linearize_for_terminal(sym_dyn_model, x_desired, n_u, Q, R):

@@ -1,15 +1,12 @@
 import math
 from collections import defaultdict
-
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from adaptive_mapper.utils import Box_Environment
 
-from common.box_constraint_utils import box_constraint
+from common.box_constraint_utils import box_constraint, Box_Environment
 from common.plotting_utils import generate_fine_grid
 from .residual_blocks import polynomial_1d
-
 
 # from mpl_toolkits import mplot3d
 

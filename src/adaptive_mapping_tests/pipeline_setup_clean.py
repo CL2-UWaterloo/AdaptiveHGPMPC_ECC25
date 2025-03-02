@@ -1,10 +1,15 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import torch
+
 from incremental_controller_impls.smpc_base import construct_config_opts
 import incremental_controller_impls.smpc_base as controller_utils
 from common.data_save_utils import read_data, update_data, save_to_data_dir
 from common.plotting_utils import AxisAdjuster
 from incremental_controller_impls.controller_classes import *
+from common.box_constraint_utils import Box_Environment
 from sys_dyn.problem_setups import quad_2d_sys_1d_inp_res
-from ds_utils import GP_DS
+from ds_utils.utils import GP_DS
 from incremental_controller_impls.utils import test_box_env_3_box_3_surf, adaptive_box_env_3_box_3_surf
 from adaptive_mapper.ws_mappers import gen_traindl_from_mapping_ds
 from adaptive_mapper.utils import Traj_DS, get_testmap_tensor_initial, get_testmap_tensor_adaptive2, gen_dl_from_samples_n_env
@@ -13,6 +18,7 @@ from sys_dyn.nlsys_utils import test_quad_2d_track
 
 from common.plotting_utils import save_fig
 from consts import FIG_SAVE_BOOL
+from adaptive_mapper.kde_utils import viz_OKDE
 
 
 def trajds_setup_and_train(ds_inst_in: GP_DS, pw_gp_wrapped, num_test_samples=5000, delta_dim=2, compare_with_gt=True,
@@ -21,7 +27,8 @@ def trajds_setup_and_train(ds_inst_in: GP_DS, pw_gp_wrapped, num_test_samples=50
                            batch_size=8, expl_cost_fn=None, only_track=False,
                            ax=None, box_env_inst=None, sampling_time=50*10e-3,
                            siren_omega=5., test_dl_fine_ctrl=100, test_ds=None, total_steps=50, steps_til_summary=10, num_mse=1, num_ce=3,
-                           viz_samples_on_test_pred=False, siren_fig_save_base='test', initial_traj_fig_save_name='test', acc_save_file_name='test', fig=None):
+                           viz_samples_on_test_pred=False, siren_fig_save_base='test', initial_traj_fig_save_name='test', acc_save_file_name='test', fig=None,
+                           siren_axes=None):
     """
     Runs a closed-loop simulation on a 2d quadrotor with nominal dynamics in the MPC but the true dynamics (with pw residual term)
     for closed-loop forward simulation.
@@ -45,12 +52,13 @@ def trajds_setup_and_train(ds_inst_in: GP_DS, pw_gp_wrapped, num_test_samples=50
                                                 title_text="Run 1 (nominal controller)",
                                                 xlabel_text='x-coord (m)',
                                                 ylabel_text='z-coord (m)', set_equal=False, skip_legend=False, legend_loc="lower right")
-
     if FIG_SAVE_BOOL:
         x_z_coords = traj_ds_init.delta_control_vec
         data_dict = {"ref_traj": init_traj_to_track, "cl_traj": x_z_coords, "box_env_inst": box_env_inst}
         save_to_data_dir(data_dict, file_name=initial_traj_fig_save_name)
         save_fig(axes=[ax], fig_name=initial_traj_fig_save_name, tick_sizes=20, tick_skip=1, k_range=None)
+    # plt.show()
+    
     if only_track:
         return None, None
 
@@ -62,19 +70,21 @@ def trajds_setup_and_train(ds_inst_in: GP_DS, pw_gp_wrapped, num_test_samples=50
     train_dataloader = gen_traindl_from_mapping_ds(ws_samples=mapping_ds_inst.nn_ds["train_data"], posteriors=mapping_ds_inst.nn_ds["train_labels"].T)
     predictor_inst = train_siren_inst(siren_inst, train_dataloader, test_ds=test_ds, total_steps=total_steps, num_mse=num_mse, num_ce=num_ce, steps_til_summary=steps_til_summary,
                                       siren_fig_save_base=siren_fig_save_base, test_dl_fine_ctrl=test_dl_fine_ctrl, viz_samples_on_test_pred=viz_samples_on_test_pred,
-                                      acc_save_file_name=acc_save_file_name)
+                                      acc_save_file_name=acc_save_file_name, axes=siren_axes, titles=[f"{pred_type} label predictions after initial run training" for pred_type in ["Soft", "Hard"]])
     return mapping_ds_inst, siren_inst, predictor_inst
 
 
 def train_siren_inst(siren_inst, train_dataloader, test_ds=None, total_steps=250, num_mse=0, num_ce=3, steps_til_summary=10,
-                     siren_fig_save_base='test', test_dl_fine_ctrl=10, viz_samples_on_test_pred=False, acc_save_file_name='test'):
+                     siren_fig_save_base='test', test_dl_fine_ctrl=10, viz_samples_on_test_pred=False, acc_save_file_name='test', axes=None,
+                     titles=None):
     siren_inst.siren_training_loop(train_dataloader, total_steps=total_steps, num_mse=num_mse, num_ce=num_ce, steps_til_summary=steps_til_summary)
     predictor_inst = SirenPredictor(siren_inst=siren_inst)
     if test_ds is not None:
         X_test, y_test = test_ds["X_test"], test_ds["y_test"]
         fig_save_name = siren_fig_save_base+str(total_steps*(num_mse+num_ce))
         predictor_inst.test_model_preds_img(test_X=X_test, test_y=y_test, test_ds_fine_ctrl=test_dl_fine_ctrl, viz_samples_on_test_pred=viz_samples_on_test_pred, fig_save_name=fig_save_name,
-                                            samples_to_viz=next(iter(train_dataloader))[0].T.numpy(), acc_save_file_name=acc_save_file_name)
+                                            samples_to_viz=next(iter(train_dataloader))[0].T.numpy(), acc_save_file_name=acc_save_file_name, axes=axes,
+                                            titles=titles)
     return predictor_inst
 
 
@@ -96,7 +106,7 @@ def gpmpc_That_controller(init_traj_file, rep_traj_file, gp_fns, x_init, satisfa
                           siren_mapper=False, num_init_training_steps=50, num_rep_training_steps=20, steps_til_summary=25, num_mse=1, num_ce=3,
                           viz_samples_on_test_pred=False, kde_bw=0.5, kde_max_cutoff_num=2,
                           siren_omega=5., alpha_min=0.5, alpha_max=0.9, num_runs=20,
-                          cost_save_file="cost_save_history", fixed_delta=False, run_num_offset=0, mode_switch_run_idx=2):
+                          cost_save_file="cost_save_history", fixed_delta=False, run_num_offset=0, mode_switch_run_idx=2, fig_title=None):
     box_env_inst = box_env_gen_fn(viz=False)
     sys_config_dict, inst_override = quad_2d_sys_1d_inp_res(velocity_limit_override=velocity_override, box_env_inst=box_env_inst,
                                                             sampling_time=sampling_time, ret_inst=True, region_viz=False)
@@ -152,11 +162,14 @@ def gpmpc_That_controller(init_traj_file, rep_traj_file, gp_fns, x_init, satisfa
         # Will update regions in init method
         configs["box_env_inst"] = box_env_inst
         test_dict = setup_test_dict_from_box(box_env_inst=box_env_inst, fine_ctrl=test_dl_fine_ctrl)
-
-        fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+        
+        fig, axes = plt.subplots(num_mapping_updates+1, 4, figsize=(16*4, 18*num_mapping_updates))
+        if fig_title is not None:
+            fig.suptitle(fig_title, fontsize=25)
+        # fig, ax = plt.subplots(1, 1, figsize=(8, 8))
         box_env_inst: Box_Environment = sys_config_dict["box_env_inst"]
-        box_env_inst.visualize_env(fine_ctrl=100, ax=ax, alpha=0.2)
-        ax.plot(x_desired_init[0, :], x_desired_init[2, :], color="cyan", marker='o',
+        box_env_inst.visualize_env(fine_ctrl=100, ax=axes[0, 0], alpha=0.2)
+        axes[0, 0].plot(x_desired_init[0, :], x_desired_init[2, :], color="cyan", marker='o',
                 linestyle='solid', linewidth=3, markersize=7, markerfacecolor='cyan',
                 label='Trajectory to track')
 
@@ -165,12 +178,14 @@ def gpmpc_That_controller(init_traj_file, rep_traj_file, gp_fns, x_init, satisfa
         mapping_ds_inst, siren_inst, predictor_inst = trajds_setup_and_train(ds_inst_in=true_ds_inst, pw_gp_wrapped=gp_fns,
                                                                              init_traj_to_track=x_desired_init, num_discrete=num_discrete, simulation_length=simulation_length_init,
                                                                              batch_size=simulation_length_init, box_env_inst=box_env_inst,
-                                                                             ax=ax, sampling_time=sampling_time, total_steps=num_init_training_steps,
+                                                                             ax=axes[0, 0], sampling_time=sampling_time, total_steps=num_init_training_steps,
                                                                              viz_samples_on_test_pred=viz_samples_on_test_pred, siren_fig_save_base=save_prefix+'siren_init_train',
                                                                              initial_traj_fig_save_name=save_prefix+"initial_traj_cl", test_ds=test_dict,
                                                                              siren_omega=siren_omega, test_dl_fine_ctrl=test_dl_fine_ctrl,
-                                                                             acc_save_file_name=acc_save_file_name, fig=fig)
-        plt.show()
+                                                                             acc_save_file_name=acc_save_file_name, fig=fig, siren_axes=[axes[0, 2], axes[0, 3]])
+        axes[0, 0].set_xlim([0, 4])
+        axes[0, 0].set_ylim([0, 4])
+        # plt.show()
 
         mapping_ds_inst.batch_size = simulation_length
         fn_config_dict["That_predictor"] = predictor_inst
@@ -206,35 +221,40 @@ def gpmpc_That_controller(init_traj_file, rep_traj_file, gp_fns, x_init, satisfa
             cl_costs.append(cl_cost)
             file_save_suffix = '_itn%s' % (k+1)
             if show_plot:
-                fig, ax = plt.subplots(1, 1, figsize=(8, 8))
-                box_env_inst.visualize_env(fine_ctrl=100, alpha=0.2, ax=ax)
+                # fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+                box_env_inst.visualize_env(fine_ctrl=100, alpha=0.2, ax=axes[k+1, 0])
                 fig_name = save_prefix+"cl_traj"+file_save_suffix
                 mu_x_cl = controller_utils.plot_CL_opt_soln(waypoints_to_track=waypoints_to_track,
                                                             data_dict_cl=data_dict_cl,
                                                             ret_mu_x_cl=True,
                                                             state_plot_idxs=sys_config_dict["state_plot_idxs"],
-                                                            plot_ol_traj=False, axes=[ax],
+                                                            plot_ol_traj=False, axes=[axes[k+1, 0]],
                                                             ax_xlim=(-0.05, box_env_inst.x_max), ax_ylim=(-0.05, box_env_inst.y_max), legend_loc='upper center',
-                                                            box_env_inst=box_env_inst, itn_num=k+1, fig_name=fig_name, fig=fig, title_text="Run %s" % (k+2))
+                                                            box_env_inst=box_env_inst, itn_num=k+1, fig_name=fig_name, fig=fig, title_text=f"Run {k+2} (C.L. cost: {cl_cost:.2f})")
+                axes[k+1, 0].set_xlim([0, 4])
+                axes[k+1, 0].set_ylim([0, 4])
 
             new_batch_data = mapping_ds_inst.nn_ds_batch["train_data"].numpy()  # (2, 160)
             complete_sample_data = mapping_ds_inst.nn_ds["train_data"]
             old_sample_data = torch.flip(complete_sample_data, dims=(1,))[:, new_batch_data.shape[1]:].numpy()
             likelihoods_new = mapping_ds_inst.nn_ds_batch["train_labels"]
-            posteriors = predictor_inst.compute_posteriors(new_batch_data, old_sample_data, likelihoods_new, kde_bw=kde_bw, min_cutoff_sigma=1, max_cutoff_sigma=1, max_cutoff_num=kde_max_cutoff_num,
-                                                           alpha_min=alpha_min, alpha_max=alpha_max)
+            posteriors, test_alpha_map_vals = predictor_inst.compute_posteriors(new_batch_data, old_sample_data, likelihoods_new, kde_bw=kde_bw, min_cutoff_sigma=1, max_cutoff_sigma=1, max_cutoff_num=kde_max_cutoff_num,
+                                                                           alpha_min=alpha_min, alpha_max=alpha_max, ret_alpha_map_vals=True)
+            viz_OKDE(density_estimate=test_alpha_map_vals, x_min=0, x_max=4, y_min=0, y_max=4, data=new_batch_data, ax=axes[k+1, 1],    
+                     title="Alpha (trade-off parameter) map generated from last trajectory")
 
             train_dl_new = gen_dl_from_samples_n_env(box_env_inst=None, samples=new_batch_data.T, ret_ds=False, labels=posteriors.T)
             predictor_inst = train_siren_inst(siren_inst, train_dl_new, test_ds=test_dict, total_steps=num_rep_training_steps, num_mse=num_mse, num_ce=num_ce, steps_til_summary=steps_til_summary,
                                               siren_fig_save_base=save_prefix+'siren_retrained'+file_save_suffix,
-                                              test_dl_fine_ctrl=test_dl_fine_ctrl, viz_samples_on_test_pred=viz_samples_on_test_pred, acc_save_file_name=acc_save_file_name)
+                                              test_dl_fine_ctrl=test_dl_fine_ctrl, viz_samples_on_test_pred=viz_samples_on_test_pred, acc_save_file_name=acc_save_file_name,
+                                              axes=[axes[k+1, 2], axes[k+1, 3]], titles=[f"{pred_type} label predictions after run {k+2} training" for pred_type in ["Soft", "Hard"]])
 
             # Update mapping DS for use in next iteration.
             mapping_ds_inst.nn_ds["train_data"] = mapping_ds_inst.nn_ds_batch["train_data"]
             mapping_ds_inst.nn_ds["train_labels"] = mapping_ds_inst.nn_ds_batch["train_labels"]
-            plt.show()
             controller_inst.That_predictor = predictor_inst
-
+            
+        plt.show()
         cl_costs_prior = read_data(file_name=cost_save_file)
         cl_costs_prior.extend(cl_costs)
         update_data(new_data=cl_costs_prior, file_name=cost_save_file)
@@ -259,5 +279,5 @@ def alpha_tradeoff_ablation_test(pw_gp_wrapped, ds_inst_in, alpha_min_arr, num_r
                               num_init_training_steps=125, num_rep_training_steps=50,
                               viz_samples_on_test_pred=True, kde_bw=0.15, kde_max_cutoff_num=2, alpha_min=alpha_min, alpha_max=0.9,
                               num_runs=num_runs_per_alpha, siren_omega=5., mode_switch_run_idx=mode_switch_run_idx, cost_save_file=cost_save_file,
-                              run_num_offset=run_num_offset)
+                              run_num_offset=run_num_offset, fig_title=f"Example run for alpha={alpha_min}")
         run_num_offset += num_runs_per_alpha+1

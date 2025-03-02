@@ -10,11 +10,10 @@ import math
 import os
 import contextlib
 
-from ds_utils import box_constraint
 from incremental_controller_impls.smpc_base import setup_terminal_costs, fwdsim_w_pw_res
 from adaptive_mapper.utils import Traj_DS
 from common.plotting_utils import save_fig
-from incremental_controller_impls.utils import Box_Environment
+from common.box_constraint_utils import box_constraint, Box_Environment
 # from vehicle_models.vehicle_models import ST_FwdSim_Model
 
 
@@ -52,7 +51,7 @@ class SymbolicModel:
         self.setup_model()
         # Setup Jacobian and Hessian of the dynamics function.
         self.setup_linearization()
-        self.setup_rk4()
+        # self.setup_rk4()
 
         self.lti = lti
         if lti:
@@ -71,10 +70,10 @@ class SymbolicModel:
         self.fc_func_w_t = lambda t, xu: np.vstack([self.fc_func(x=xu[:self.nx], u=xu[self.nx:])['f'], np.zeros((self.nu, 1))]).squeeze()
 
         # Discrete time dynamics.
-        self.fd_func = cs.integrator('fd', self.integration_algo, {'x': self.x_sym,
-                                                                   'p': self.u_sym,
-                                                                   'ode': self.x_dot}, 0, self.dt
-                                    )
+        # self.fd_func = cs.integrator('fd', self.integration_algo, {'x': self.x_sym,
+        #                                                            'p': self.u_sym,
+        #                                                            'ode': self.x_dot}, 0, self.dt
+        #                             )
         # self.dfdx_disc = cs.jacobian(self.fd_func(self.x_sym, self.u_sym, 0, 0, 0, 0)[0], self.x_sym)
         # self.dfdu_disc = cs.jacobian(self.fd_func(self.x_sym, self.u_sym, 0, 0, 0, 0)[0], self.u_sym)
         # self.f_disc_linear_func = cs.Function('fd_linear', [self.x_sym, self.u_sym], [self.dfdx_disc, self.dfdu_disc], ['x', 'u'], ['dfdx_lin', 'dfdu_lin'])
@@ -109,12 +108,12 @@ class SymbolicModel:
         self.fc_linear_func = cs.Function(
             'fc', [self.x_eval, self.u_eval, self.x_sym, self.u_sym],
             [self.x_dot_linear], ['x_eval', 'u_eval', 'x', 'u'], ['f_linear'])
-        self.fd_linear_func = cs.integrator(
-            'fd_linear', self.integration_algo, {
-                'x': self.x_eval,
-                'p': cs.vertcat(self.u_eval, self.x_sym, self.u_sym),
-                'ode': self.x_dot_linear
-            }, 0, self.dt)
+        # self.fd_linear_func = cs.integrator(
+        #     'fd_linear', self.integration_algo, {
+        #         'x': self.x_eval,
+        #         'p': cs.vertcat(self.u_eval, self.x_sym, self.u_sym),
+        #         'ode': self.x_dot_linear
+        #     }, 0, self.dt)
 
 
     def setup_exact_lin(self):
@@ -978,8 +977,8 @@ def test_track_sim(opti, ct_dyn, symbolic_inst, U, X, tracking_matrix, plot_idxs
     if viz:
         if ax is None:
             fig, ax = plt.subplots(1, 1, figsize=(12, 12))
-        if box_env_2_viz is not None:
-            box_env_2_viz.visualize_env(alpha=0.1, ax=ax)
+        # if box_env_2_viz is not None:
+        #     box_env_2_viz.visualize_env(alpha=0.1, ax=ax)
             # colours = ['r', 'g', 'b']
             # for region_idx, region in enumerate(regions_2_viz):
             #     region.plot_constraint_set(ax=ax, alpha=0.6, colour=colours[region_idx])
@@ -996,7 +995,7 @@ def test_track_sim(opti, ct_dyn, symbolic_inst, U, X, tracking_matrix, plot_idxs
             ax.set_ylim(ax_ylim_override)
         ax.legend(loc='lower right')
         # save_fig(axes=[ax], fig_name="traj_op_base_mapping", tick_sizes=15)
-        plt.show()
+        # plt.show()
     if forward_sim == "nominal_dyn":
         if not ret_inputs:
             return cl_traj

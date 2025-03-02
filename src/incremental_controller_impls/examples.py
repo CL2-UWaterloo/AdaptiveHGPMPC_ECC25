@@ -4,6 +4,7 @@ from incremental_controller_impls.smpc_base import OptiDebugger, construct_confi
 import incremental_controller_impls.smpc_base as controller_utils
 from common.data_save_utils import save_data, read_data
 from incremental_controller_impls.controller_classes import *
+from common.box_constraint_utils import Box_Environment
 from sys_dyn.problem_setups import quad_2d_sys_1d_inp_res, planar_lti_1d_inp_res
 from sys_dyn.nlsys_utils import test_quad_2d_track
 from incremental_controller_impls.utils import test_box_env_3_box_3_surf
@@ -102,8 +103,8 @@ def sanity_check_controller(x_init, velocity_override=0.7, early_termination=Tru
 
     u_warmstart = np.array(u_warmstart, ndmin=2).reshape((n_u, -1))
     np.set_printoptions(threshold=np.inf)
-    print(u_warmstart)
-    print(x_desired)
+    # print(u_warmstart)
+    # print(x_desired)
     np.set_printoptions(threshold=1000)
     tracking_matrix = sys_config_dict["tracking_matrix"]
     waypoints_to_track = tracking_matrix[:, :controller_inst.n_x] @ x_desired
